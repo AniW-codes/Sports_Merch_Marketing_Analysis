@@ -1,14 +1,15 @@
-# Library Management System using SQL Project --P2
+# Sports Merchandise Marketing Analytics Portfolio Project
 
 ## Project Overview
 
-**Project Title**: Library Management System  
-**Level**: Intermediate  
-**Database**: `library_db`
+**Project Title**: Sports Merchandise Marketing Analytics Portfolio Project 
 
-This project demonstrates the implementation of a Library Management System using SQL. It includes creating and managing tables, performing CRUD operations, and executing advanced SQL queries. The goal is to showcase skills in database design, manipulation, and querying.
+**Level**: Advanced
 
-![Library_project](https://github.com/najirh/Library-System-Management---P2/blob/main/library.jpg)
+**Database**: `PortforlioProject_MarketingAnalysis`
+
+
+![Library_project](https://github.com/AniW-codes/Sports_Merch_Marketing_Analysis/blob/main/apparel_display.jpg)
 
 ## Objectives
 

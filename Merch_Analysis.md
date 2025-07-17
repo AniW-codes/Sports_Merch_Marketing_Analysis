@@ -9,515 +9,358 @@
 **Database**: `PortforlioProject_MarketingAnalysis`
 
 
-![Library_project](https://github.com/AniW-codes/Sports_Merch_Marketing_Analysis/blob/main/apparel_display.jpg)
+![Sport_merch](https://github.com/AniW-codes/Sports_Merch_Marketing_Analysis/blob/main/apparel_display.jpg)
 
-## Objectives
+## Introduction to Business Problem
 
-1. **Set up the Library Management System Database**: Create and populate the database with tables for branches, employees, members, books, issued status, and return status.
-2. **CRUD Operations**: Perform Create, Read, Update, and Delete operations on the data.
-3. **CTAS (Create Table As Select)**: Utilize CTAS to create new tables based on query results.
-4. **Advanced SQL Queries**: Develop complex queries to analyze and retrieve specific data.
+**ShopEasy**, an online retail sports merch business, is facing reduced customer engagement and conversion rates despite launching several new online marketing campaigns. They are reaching out to you to help conduct a detailed analysis and identify areas for improvement in their marketing strategies.
 
-## Project Structure
+**Key Points**:
+Reduced Customer Engagement: The number of customer interactions and engagement with the site and marketing content has declined.
+Decreased Conversion Rates: Fewer site visitors are converting into paying customers.
+High Marketing Expenses: Significant investments in marketing campaigns are not yielding expected returns.
+Need for Customer Feedback Analysis: Understanding customer opinions about products and services is crucial for improving engagement and conversions.
 
-### 1. Database Setup
-![ERD](https://github.com/najirh/Library-System-Management---P2/blob/main/library_erd.png)
+## Key Performance Indicators (KPIs) to assess:
+1. **Conversion Rate**: Percentage of website visitors who make a purchase.
+2. **Customer Engagement Rate**: Level of interaction with marketing content (clicks, likes, comments).
+3. **Average Order Value (AOV)**: Average amount spent by a customer per transaction.
+4. **Customer Feedback Score**: Average rating from customer reviews.
 
-- **Database Creation**: Created a database named `library_db`.
-- **Table Creation**: Created tables for branches, employees, members, books, issued status, and return status. Each table includes relevant columns and relationships.
+## Goals
+1. **Increase Conversion Rates**:
+Goal: Identify factors impacting the conversion rate and provide recommendations to improve it.
+Insight: Highlight key stages where visitors drop off and suggest improvements to optimize the conversion funnel.
+2. **Enhance Customer Engagement**:
+Goal: Determine which types of content drive the highest engagement. 
+Insight: Analyze interaction levels with different types of marketing content to inform better content strategies.
+3. **Improve Customer Feedback Scores**:
+Goal: Understand common themes in customer reviews and provide actionable insights.
+Insight: Identify recurring positive and negative feedback to guide product and service improvements.
+
+
+- **Database Creation**: Restore a database named `PortforlioProject_MarketingAnalysis`.
+- **Data refinement for Power BI and Sentimental analysis**: Setup queries and resultant tables for use to be extracted into Power BI to generate viz and extract csv for sentimental analysis using Python.
 
 ```sql
-CREATE DATABASE library_db;
 
-DROP TABLE IF EXISTS branch;
-CREATE TABLE branch
-(
-            branch_id VARCHAR(10) PRIMARY KEY,
-            manager_id VARCHAR(10),
-            branch_address VARCHAR(30),
-            contact_no VARCHAR(15)
-);
+select * from customer_journey
+
+select * from customer_reviews
+
+select * from customers
+
+select * from engagement_data
+
+select * from geography
+
+select * from products
+
+------------
+--Price Classification
+------------
+select ProductID,
+		ProductName,
+		Price,
+		CASE
+			When Price < 50 then 'Low'
+			When Price between 50 and 200 then 'Medium'
+			else 'High'
+		END as Product_Price_Classification
+from products
+
+------------
+--Enrich customer data with geographical data
+------------
+
+select CustomerID,
+		CustomerName,
+		Email,
+		Gender,
+		Age,
+		Country,
+		City
+from customers
+	left join geography
+		on customers.GeographyID = geography.GeographyID
+
+------------
+--Cleaning column in Cust Review to make a better reading of it for sentimental analysis in python
+------------
+
+select ReviewID,
+		CustomerID,
+		ProductID,
+		ReviewDate,
+		Rating,
+		REPLACE(ReviewText, '  ',' ') as ReviewText
+from customer_reviews
+
+------------
+--Cleaning engagement data which would be beneficial for analysis in PowerBI later on.
+------------
+
+select EngagementID,
+		ContentID,
+		CampaignID,
+		ProductID,
+		Upper(REPLACE(ContentType, 'socialmedia', 'Social Media')) as ContentType,
+		LEFT(ViewsClicksCombined,CHARINDEX('-',ViewsClicksCombined)-1) as Views,
+		RIGHT(ViewsClicksCombined, len(ViewsClicksCombined) - CHARINDEX('-',ViewsClicksCombined)) as Clicks,
+		Likes,
+		FORMAT(CONVERT(DATE, EngagementDate), 'dd.MM.yyyy') AS EngagementDate  -- Converts and formats the date as dd.mm.yyyy
+from engagement_data
+where ContentType != 'newsletter'
 
 
--- Create table "Employee"
-DROP TABLE IF EXISTS employees;
-CREATE TABLE employees
-(
-            emp_id VARCHAR(10) PRIMARY KEY,
-            emp_name VARCHAR(30),
-            position VARCHAR(30),
-            salary DECIMAL(10,2),
-            branch_id VARCHAR(10),
-            FOREIGN KEY (branch_id) REFERENCES  branch(branch_id)
-);
+------------
+--Cleaning duplicates in engagement table and fixing NULL values in duration column
+------------
+
+--Verification of null values in the DB.
+
+With CTE_Engagement_Duplicates as
+(select 
+	JourneyID,
+	CustomerID,
+	ProductID,
+	VisitDate,
+	Stage,
+	Action,
+	Duration,
+	ROW_NUMBER() Over(Partition by CustomerID,ProductID,VisitDate,Stage,Action 
+						Order by JourneyID) as row_num
+from customer_journey
+
+)
+
+Select * 
+from CTE_Engagement_Duplicates
+	where row_num = 1
+	order by JourneyID
 
 
--- Create table "Members"
-DROP TABLE IF EXISTS members;
-CREATE TABLE members
-(
-            member_id VARCHAR(10) PRIMARY KEY,
-            member_name VARCHAR(30),
-            member_address VARCHAR(30),
-            reg_date DATE
-);
+--Getting rid of all the null values and duplicates in this query to upload in PowerBI.
 
 
+SELECT JourneyID,
+		CustomerID,
+		ProductID,
+		VisitDate,
+		Stage,
+		Action,
+		COALESCE(Duration, avg_Duration) as Duration
+FROM
+(select JourneyID,
+		CustomerID,
+		ProductID,
+		VisitDate,
+		UPPER(Stage) as Stage,
+		Action,
+		Duration, 
+		AVG(Duration) Over(Partition by VisitDate Order by JourneyID) as avg_Duration,
+		ROW_NUMBER() Over(Partition by CustomerID,ProductID,VisitDate, UPPER(Stage), Action Order by JourneyID) as row_num
+from customer_journey) as t1
+			WHERE row_num = 1
 
--- Create table "Books"
-DROP TABLE IF EXISTS books;
-CREATE TABLE books
-(
-            isbn VARCHAR(50) PRIMARY KEY,
-            book_title VARCHAR(80),
-            category VARCHAR(30),
-            rental_price DECIMAL(10,2),
-            status VARCHAR(10),
-            author VARCHAR(30),
-            publisher VARCHAR(30)
-);
-
-
-
--- Create table "IssueStatus"
-DROP TABLE IF EXISTS issued_status;
-CREATE TABLE issued_status
-(
-            issued_id VARCHAR(10) PRIMARY KEY,
-            issued_member_id VARCHAR(30),
-            issued_book_name VARCHAR(80),
-            issued_date DATE,
-            issued_book_isbn VARCHAR(50),
-            issued_emp_id VARCHAR(10),
-            FOREIGN KEY (issued_member_id) REFERENCES members(member_id),
-            FOREIGN KEY (issued_emp_id) REFERENCES employees(emp_id),
-            FOREIGN KEY (issued_book_isbn) REFERENCES books(isbn) 
-);
-
-
-
--- Create table "ReturnStatus"
-DROP TABLE IF EXISTS return_status;
-CREATE TABLE return_status
-(
-            return_id VARCHAR(10) PRIMARY KEY,
-            issued_id VARCHAR(30),
-            return_book_name VARCHAR(80),
-            return_date DATE,
-            return_book_isbn VARCHAR(50),
-            FOREIGN KEY (return_book_isbn) REFERENCES books(isbn)
-);
 
 ```
 
-### 2. CRUD Operations
+### 2. Establishing relationships within Power BI 
 
-- **Create**: Inserted sample records into the `books` table.
-- **Read**: Retrieved and displayed data from various tables.
-- **Update**: Updated records in the `employees` table.
-- **Delete**: Removed records from the `members` table as needed.
-
-**Task 1. Create a New Book Record**
--- "978-1-60129-456-2', 'To Kill a Mockingbird', 'Classic', 6.00, 'yes', 'Harper Lee', 'J.B. Lippincott & Co.')"
-
-```sql
-INSERT INTO books(isbn, book_title, category, rental_price, status, author, publisher)
-VALUES('978-1-60129-456-2', 'To Kill a Mockingbird', 'Classic', 6.00, 'yes', 'Harper Lee', 'J.B. Lippincott & Co.');
-SELECT * FROM books;
-```
-**Task 2: Update an Existing Member's Address**
-
-```sql
-UPDATE members
-SET member_address = '125 Oak St'
-WHERE member_id = 'C103';
-```
-
-**Task 3: Delete a Record from the Issued Status Table**
--- Objective: Delete the record with issued_id = 'IS121' from the issued_status table.
-
-```sql
-DELETE FROM issued_status
-WHERE   issued_id =   'IS121';
-```
-
-**Task 4: Retrieve All Books Issued by a Specific Employee**
--- Objective: Select all books issued by the employee with emp_id = 'E101'.
-```sql
-SELECT * FROM issued_status
-WHERE issued_emp_id = 'E101'
-```
+![Sport_merch](https://github.com/AniW-codes/Sports_Merch_Marketing_Analysis/blob/main/Relationships.png)
 
 
-**Task 5: List Members Who Have Issued More Than One Book**
--- Objective: Use GROUP BY to find members who have issued more than one book.
+- **Establish MEASURES for dashboard using DAX in Power BI**:
 
-```sql
-SELECT
-    issued_emp_id,
-    COUNT(*)
-FROM issued_status
-GROUP BY 1
-HAVING COUNT(*) > 1
-```
+```DAX
 
-### 3. CTAS (Create Table As Select)
+1. **Avg Rating** = AVERAGE(fact_customer_reviews_with_sentiment[Rating])
+   
+2. **Clicks** = SUM(fact_engagement_data[Clicks])
 
-- **Task 6: Create Summary Tables**: Used CTAS to generate new tables based on query results - each book and total book_issued_cnt**
+3. **Conversion Rate** = 
 
-```sql
-CREATE TABLE book_issued_cnt AS
-SELECT b.isbn, b.book_title, COUNT(ist.issued_id) AS issue_count
-FROM issued_status as ist
-JOIN books as b
-ON ist.issued_book_isbn = b.isbn
-GROUP BY b.isbn, b.book_title;
-```
+VAR TotalVisitors = CALCULATE(COUNT(fact_customer_journey[JourneyID]),fact_customer_journey[Action]="View")
+VAR TotalPurchases = CALCULATE(
+    COUNT(fact_customer_journey[JourneyID]),
+    fact_customer_journey[Action] = "Purchase"
+)
+RETURN
+IF(
+    TotalVisitors = 0,
+    0,
+    DIVIDE(TotalPurchases,TotalVisitors)
+)
 
+4. **Likes** = SUM(fact_engagement_data[Likes])
+   
+5. **No of Campaigns** = DISTINCTCOUNT(fact_engagement_data[CampaignID])
 
-### 4. Data Analysis & Findings
+6. **No of Customer Journeys** = DISTINCTCOUNT(fact_customer_journey[JourneyID])
 
-The following SQL queries were used to address specific questions:
+7. **No of Customer Reviews** = DISTINCTCOUNT(fact_customer_reviews_with_sentiment[ReviewID])
+   
+8. **Views** = SUM(fact_engagement_data[Views])
 
-Task 7. **Retrieve All Books in a Specific Category**:
-
-```sql
-SELECT * FROM books
-WHERE category = 'Classic';
-```
-
-8. **Task 8: Find Total Rental Income by Category**:
-
-```sql
-SELECT 
-    b.category,
-    SUM(b.rental_price),
-    COUNT(*)
-FROM 
-issued_status as ist
-JOIN
-books as b
-ON b.isbn = ist.issued_book_isbn
-GROUP BY 1
-```
-
-9. **List Members Who Registered in the Last 180 Days**:
-```sql
-SELECT * FROM members
-WHERE reg_date >= CURRENT_DATE - INTERVAL '180 days';
-```
-
-10. **List Employees with Their Branch Manager's Name and their branch details**:
-
-```sql
-SELECT 
-    e1.emp_id,
-    e1.emp_name,
-    e1.position,
-    e1.salary,
-    b.*,
-    e2.emp_name as manager
-FROM employees as e1
-JOIN 
-branch as b
-ON e1.branch_id = b.branch_id    
-JOIN
-employees as e2
-ON e2.emp_id = b.manager_id
-```
-
-Task 11. **Create a Table of Books with Rental Price Above a Certain Threshold**:
-```sql
-CREATE TABLE expensive_books AS
-SELECT * FROM books
-WHERE rental_price > 7.00;
-```
-
-Task 12: **Retrieve the List of Books Not Yet Returned**
-```sql
-SELECT * FROM issued_status as ist
-LEFT JOIN
-return_status as rs
-ON rs.issued_id = ist.issued_id
-WHERE rs.return_id IS NULL;
-```
-
-## Advanced SQL Operations
-
-**Task 13: Identify Members with Overdue Books**  
-Write a query to identify members who have overdue books (assume a 30-day return period). Display the member's_id, member's name, book title, issue date, and days overdue.
-
-```sql
-SELECT 
-    ist.issued_member_id,
-    m.member_name,
-    bk.book_title,
-    ist.issued_date,
-    -- rs.return_date,
-    CURRENT_DATE - ist.issued_date as over_dues_days
-FROM issued_status as ist
-JOIN 
-members as m
-    ON m.member_id = ist.issued_member_id
-JOIN 
-books as bk
-ON bk.isbn = ist.issued_book_isbn
-LEFT JOIN 
-return_status as rs
-ON rs.issued_id = ist.issued_id
-WHERE 
-    rs.return_date IS NULL
-    AND
-    (CURRENT_DATE - ist.issued_date) > 30
-ORDER BY 1
-```
-
-
-**Task 14: Update Book Status on Return**  
-Write a query to update the status of books in the books table to "Yes" when they are returned (based on entries in the return_status table).
-
-
-```sql
-
-CREATE OR REPLACE PROCEDURE add_return_records(p_return_id VARCHAR(10), p_issued_id VARCHAR(10), p_book_quality VARCHAR(10))
-LANGUAGE plpgsql
-AS $$
-
-DECLARE
-    v_isbn VARCHAR(50);
-    v_book_name VARCHAR(80);
+9. **Calendar** = 
+ADDCOLUMNS (
     
-BEGIN
-    -- all your logic and code
-    -- inserting into returns based on users input
-    INSERT INTO return_status(return_id, issued_id, return_date, book_quality)
-    VALUES
-    (p_return_id, p_issued_id, CURRENT_DATE, p_book_quality);
+    CALENDAR ( DATE ( 2023, 1, 1 ), DATE ( 2025, 12, 31 ) ),
+    "DateAsInteger", FORMAT ( [Date], "YYYYMMDD" ),
+    "Year", YEAR ( [Date] ),
+    "Monthnumber", FORMAT ( [Date], "MM" ),
+    "YearMonthnumber", FORMAT ( [Date], "YYYY/MM" ),
+    "YearMonthShort", FORMAT ( [Date], "YYYY/mmm" ),
+    "MonthNameShort", FORMAT ( [Date], "mmm" ),
+    "MonthNameLong", FORMAT ( [Date], "mmmm" ),
+    "DayOfWeekNumber", WEEKDAY ( [Date] ),
+    "DayOfWeek", FORMAT ( [Date], "dddd" ),
+    "DayOfWeekShort", FORMAT ( [Date], "ddd" ),
+    "Quarter", "Q" & FORMAT ( [Date], "Q" ),
+    "YearQuarter",
+        FORMAT ( [Date], "YYYY" ) & "/Q"
+            & FORMAT ( [Date], "Q" )
+)
 
-    SELECT 
-        issued_book_isbn,
-        issued_book_name
-        INTO
-        v_isbn,
-        v_book_name
-    FROM issued_status
-    WHERE issued_id = p_issued_id;
+```
 
-    UPDATE books
-    SET status = 'yes'
-    WHERE isbn = v_isbn;
+**Extracting Sentimental analysis as a CSV in customer reviews table**
 
-    RAISE NOTICE 'Thank you for returning the book: %', v_book_name;
+```{python}
+
+# pip install pandas nltk pyodbc sqlalchemy
+
+import pandas as pd
+import pyodbc
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+
+# Download the VADER lexicon for sentiment analysis if not already present.
+nltk.download('vader_lexicon')
+
+# Define a function to fetch data from a SQL database using a SQL query
+def fetch_data_from_sql():
+    # Define the connection string with parameters for the database connection
+    conn_str = (
+        "Driver={SQL Server};"  # Specify the driver for SQL Server
+        "Server=aniruddha-waran;"  # Specify your SQL Server instance
+        "Database=PortfolioProject_MarketingAnalytics;"  # Specify the database name
+        "Trusted_Connection=yes;" # Use Windows Authentication for the connection
+    )
+    # Establish the connection to the database
+    conn = pyodbc.connect(conn_str)
     
-END;
-$$
+    # Define the SQL query to fetch customer reviews data
+    query = "SELECT ReviewID, CustomerID, ProductID, ReviewDate, Rating, ReviewText FROM customer_reviews"
+    
+    # Execute the query and fetch the data into a DataFrame
+    df = pd.read_sql(query, conn)
+    
+    # Close the connection to free up resources
+    conn.close()
+    
+    # Return the fetched data as a DataFrame
+    return df
 
+# Fetch the customer reviews data from the SQL database
+customer_reviews_df = fetch_data_from_sql()
 
--- Testing FUNCTION add_return_records
+# Initialize the VADER sentiment intensity analyzer for analyzing the sentiment of text data
+sia = SentimentIntensityAnalyzer()
 
-issued_id = IS135
-ISBN = WHERE isbn = '978-0-307-58837-1'
+# Define a function to calculate sentiment scores using VADER
+def calculate_sentiment(review):
+    # Get the sentiment scores for the review text
+    sentiment = sia.polarity_scores(review)
+    # Return the compound score, which is a normalized score between -1 (most negative) and 1 (most positive)
+    return sentiment['compound']
 
-SELECT * FROM books
-WHERE isbn = '978-0-307-58837-1';
+# Define a function to categorize sentiment using both the sentiment score and the review rating
+def categorize_sentiment(score, rating):
+    # Use both the text sentiment score and the numerical rating to determine sentiment category
+    if score > 0.05:  # Positive sentiment score
+        if rating >= 4:
+            return 'Positive'  # High rating and positive sentiment
+        elif rating == 3:
+            return 'Mixed Positive'  # Neutral rating but positive sentiment
+        else:
+            return 'Mixed Negative'  # Low rating but positive sentiment
+    elif score < -0.05:  # Negative sentiment score
+        if rating <= 2:
+            return 'Negative'  # Low rating and negative sentiment
+        elif rating == 3:
+            return 'Mixed Negative'  # Neutral rating but negative sentiment
+        else:
+            return 'Mixed Positive'  # High rating but negative sentiment
+    else:  # Neutral sentiment score
+        if rating >= 4:
+            return 'Positive'  # High rating with neutral sentiment
+        elif rating <= 2:
+            return 'Negative'  # Low rating with neutral sentiment
+        else:
+            return 'Neutral'  # Neutral rating and neutral sentiment
 
-SELECT * FROM issued_status
-WHERE issued_book_isbn = '978-0-307-58837-1';
+# Define a function to bucket sentiment scores into text ranges
+def sentiment_bucket(score):
+    if score >= 0.5:
+        return '0.5 to 1.0'  # Strongly positive sentiment
+    elif 0.0 <= score < 0.5:
+        return '0.0 to 0.49'  # Mildly positive sentiment
+    elif -0.5 <= score < 0.0:
+        return '-0.49 to 0.0'  # Mildly negative sentiment
+    else:
+        return '-1.0 to -0.5'  # Strongly negative sentiment
 
-SELECT * FROM return_status
-WHERE issued_id = 'IS135';
+# Apply sentiment analysis to calculate sentiment scores for each review
+customer_reviews_df['SentimentScore'] = customer_reviews_df['ReviewText'].apply(calculate_sentiment)
 
--- calling function 
-CALL add_return_records('RS138', 'IS135', 'Good');
+# Apply sentiment categorization using both text and rating
+customer_reviews_df['SentimentCategory'] = customer_reviews_df.apply(
+    lambda row: categorize_sentiment(row['SentimentScore'], row['Rating']), axis=1)
 
--- calling function 
-CALL add_return_records('RS148', 'IS140', 'Good');
+# Apply sentiment bucketing to categorize scores into defined ranges
+customer_reviews_df['SentimentBucket'] = customer_reviews_df['SentimentScore'].apply(sentiment_bucket)
+
+# Display the first few rows of the DataFrame with sentiment scores, categories, and buckets
+print(customer_reviews_df.head())
+
+# Save the DataFrame with sentiment scores, categories, and buckets to a new CSV file
+customer_reviews_df.to_csv('fact_customer_reviews_with_sentiment.csv', index=False)
+
 
 ```
 
+The code above will generate a .csv file 
+
+![Sport_merch](https://github.com/AniW-codes/Sports_Merch_Marketing_Analysis/blob/main/Sentimental.png)
 
 
-
-**Task 15: Branch Performance Report**  
-Create a query that generates a performance report for each branch, showing the number of books issued, the number of books returned, and the total revenue generated from book rentals.
-
-```sql
-CREATE TABLE branch_reports
-AS
-SELECT 
-    b.branch_id,
-    b.manager_id,
-    COUNT(ist.issued_id) as number_book_issued,
-    COUNT(rs.return_id) as number_of_book_return,
-    SUM(bk.rental_price) as total_revenue
-FROM issued_status as ist
-JOIN 
-employees as e
-ON e.emp_id = ist.issued_emp_id
-JOIN
-branch as b
-ON e.branch_id = b.branch_id
-LEFT JOIN
-return_status as rs
-ON rs.issued_id = ist.issued_id
-JOIN 
-books as bk
-ON ist.issued_book_isbn = bk.isbn
-GROUP BY 1, 2;
-
-SELECT * FROM branch_reports;
-```
-
-**Task 16: CTAS: Create a Table of Active Members**  
-Use the CREATE TABLE AS (CTAS) statement to create a new table active_members containing members who have issued at least one book in the last 2 months.
-
-```sql
-
-CREATE TABLE active_members
-AS
-SELECT * FROM members
-WHERE member_id IN (SELECT 
-                        DISTINCT issued_member_id   
-                    FROM issued_status
-                    WHERE 
-                        issued_date >= CURRENT_DATE - INTERVAL '2 month'
-                    )
-;
-
-SELECT * FROM active_members;
-
-```
+The .csv file is then uploaded onto Power BI server to generate actionable insights based on reviews, ratings and sentimental category, which can be observed in the video attached on LinkedIn post.
 
 
-**Task 17: Find Employees with the Most Book Issues Processed**  
-Write a query to find the top 3 employees who have processed the most book issues. Display the employee name, number of books processed, and their branch.
+## Summary Reports:
 
-```sql
-SELECT 
-    e.emp_name,
-    b.*,
-    COUNT(ist.issued_id) as no_book_issued
-FROM issued_status as ist
-JOIN
-employees as e
-ON e.emp_id = ist.issued_emp_id
-JOIN
-branch as b
-ON e.branch_id = b.branch_id
-GROUP BY 1, 2
-```
+Based on outcomes observed from insights, certain actions are suggested to enhance Customer engagement on social media posts, improve customer ratings and increase conversion rates.
 
-**Task 18: Identify Members Issuing High-Risk Books**  
-Write a query to identify members who have issued books more than twice with the status "damaged" in the books table. Display the member name, book title, and the number of times they've issued damaged books.    
+**Increase Conversion Rates**:
+Target High-Performing Product Categories: Focus marketing efforts on products with demonstrated high conversion rates, such as Hockey Sticks, Ski Boots, and Baseball Gloves. Implement seasonal promotions or personalized campaigns during peak months (e.g., January and September) to capitalize on these trends.
 
+**Enhance Customer Engagement**:
+Revitalize Content Strategy: To turn around declining views and low interaction rates, experiment with more engaging content formats, such as interactive videos or user-generated content. 
+Additionally, boost engagement by optimizing call-to-action placement in social media and blog content, particularly during historically lower-engagement months (September-December).
 
-**Task 19: Stored Procedure**
-Objective:
-Create a stored procedure to manage the status of books in a library system.
-Description:
-Write a stored procedure that updates the status of a book in the library based on its issuance. The procedure should function as follows:
-The stored procedure should take the book_id as an input parameter.
-The procedure should first check if the book is available (status = 'yes').
-If the book is available, it should be issued, and the status in the books table should be updated to 'no'.
-If the book is not available (status = 'no'), the procedure should return an error message indicating that the book is currently not available.
+**Improve Customer Feedback Scores**:
+Address Mixed and Negative Feedback: Implement a feedback loop where mixed and negative reviews are analyzed to identify common issues. Develop improvement plans to address these concerns. Consider following up with dissatisfied customers to resolve issues and encourage re-rating, aiming to move average ratings closer to the 4.0 target.
 
-```sql
-
-CREATE OR REPLACE PROCEDURE issue_book(p_issued_id VARCHAR(10), p_issued_member_id VARCHAR(30), p_issued_book_isbn VARCHAR(30), p_issued_emp_id VARCHAR(10))
-LANGUAGE plpgsql
-AS $$
-
-DECLARE
--- all the variabable
-    v_status VARCHAR(10);
-
-BEGIN
--- all the code
-    -- checking if book is available 'yes'
-    SELECT 
-        status 
-        INTO
-        v_status
-    FROM books
-    WHERE isbn = p_issued_book_isbn;
-
-    IF v_status = 'yes' THEN
-
-        INSERT INTO issued_status(issued_id, issued_member_id, issued_date, issued_book_isbn, issued_emp_id)
-        VALUES
-        (p_issued_id, p_issued_member_id, CURRENT_DATE, p_issued_book_isbn, p_issued_emp_id);
-
-        UPDATE books
-            SET status = 'no'
-        WHERE isbn = p_issued_book_isbn;
-
-        RAISE NOTICE 'Book records added successfully for book isbn : %', p_issued_book_isbn;
-
-
-    ELSE
-        RAISE NOTICE 'Sorry to inform you the book you have requested is unavailable book_isbn: %', p_issued_book_isbn;
-    END IF;
-END;
-$$
-
--- Testing The function
-SELECT * FROM books;
--- "978-0-553-29698-2" -- yes
--- "978-0-375-41398-8" -- no
-SELECT * FROM issued_status;
-
-CALL issue_book('IS155', 'C108', '978-0-553-29698-2', 'E104');
-CALL issue_book('IS156', 'C108', '978-0-375-41398-8', 'E104');
-
-SELECT * FROM books
-WHERE isbn = '978-0-375-41398-8'
-
-```
-
-
-
-**Task 20: Create Table As Select (CTAS)**
-Objective: Create a CTAS (Create Table As Select) query to identify overdue books and calculate fines.
-
-Description: Write a CTAS query to create a new table that lists each member and the books they have issued but not returned within 30 days. The table should include:
-    The number of overdue books.
-    The total fines, with each day's fine calculated at $0.50.
-    The number of books issued by each member.
-    The resulting table should show:
-    Member ID
-    Number of overdue books
-    Total fines
-
-
-
-## Reports
-
-- **Database Schema**: Detailed table structures and relationships.
-- **Data Analysis**: Insights into book categories, employee salaries, member registration trends, and issued books.
-- **Summary Reports**: Aggregated data on high-demand books and employee performance.
 
 ## Conclusion
 
-This project demonstrates the application of SQL skills in creating and managing a library management system. It includes database setup, data manipulation, and advanced querying, providing a solid foundation for data management and analysis.
+This project demonstrates the application of SQL and Python skills in marketing analysis of sports merchandise throughout different times of the year. It also showcases my skills to manipulate and manage data to arrive at actionable insights for the marketing and customer experience teams. 
 
-## How to Use
+## Author - Aniruddha Warang
 
-1. **Clone the Repository**: Clone this repository to your local machine.
-   ```sh
-   git clone https://github.com/najirh/Library-System-Management---P2.git
-   ```
-
-2. **Set Up the Database**: Execute the SQL scripts in the `database_setup.sql` file to create and populate the database.
-3. **Run the Queries**: Use the SQL queries in the `analysis_queries.sql` file to perform the analysis.
-4. **Explore and Modify**: Customize the queries as needed to explore different aspects of the data or answer additional questions.
-
-## Author - Zero Analyst
-
-This project showcases SQL skills essential for database management and analysis. For more content on SQL and data analysis, connect with me through the following channels:
-
-- **YouTube**: [Subscribe to my channel for tutorials and insights](https://www.youtube.com/@zero_analyst)
-- **Instagram**: [Follow me for daily tips and updates](https://www.instagram.com/zero_analyst/)
-- **LinkedIn**: [Connect with me professionally](https://www.linkedin.com/in/najirr)
-- **Discord**: [Join our community for learning and collaboration](https://discord.gg/36h5f2Z5PK)
+- **LinkedIn**: [Connect with me professionally](https://www.linkedin.com/in/aniruddhawarang/)
 
 Thank you for your interest in this project!
